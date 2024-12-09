@@ -9,26 +9,7 @@ class MinkowskiMetric:
         p = inf: Chebyshev
         '''
         self.p = p
-        self._p_recip = 1/p if p != float('inf') else 0 #Cache reciprocal so we dont divide
-
-    def _fast_power(self, x, power):
-        '''
-        Fast power I saw on youtube video about halo optimizations
-        x ** n ~= (x ** (n // 2)) ** 2
-        EVEN: x ** n = (x ** (n // 2)) ** 2
-        ODD: x ** n = x * (x ** (n // 2)) ** 2
-        '''     
-        if isinstance(power, int):
-            result = 1
-            base = x
-            while power:
-                if power & 1:
-                    result *= base
-                base *= base
-                power >>= 1
-            return result
-            
-        return x ** power
+        self._p_recip = 1/p if p != float('inf') else 0 #Cache reciprocal so we dont divide, absolute genius
 
     def calculate_distance(self, point1, point2):
         '''
@@ -83,3 +64,7 @@ class MinkowskiMetric:
             center.append((sum_power * inv_n) ** self._p_recip) #(1/|C| * sum)^(1/p)
 
         return center
+
+'''
+Too tired right now so leaving a note for future, change p so its powers of 2 so p=-2 = 2^-2 which is 0.25 which is a valid minkowski metric
+'''

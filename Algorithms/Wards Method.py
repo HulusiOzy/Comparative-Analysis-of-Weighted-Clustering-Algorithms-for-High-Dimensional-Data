@@ -15,20 +15,28 @@ import os
 
 #   (|p| . |q| / |p u q|) . ||x̄p - x̄q||²
 
-def euclidean_distance(centroid1, centroid2):
-    return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
+class Wards:
+    def __init__(self, filename='iris.data', n_clusters=3):
+        self.filename = filename
+        self.n_clusters = n_clusters
+        self.labels_ = None
+        self.data = None
+        self.cluster_sizes = None
+        self.centroids = None
+        self.distances = None
 
-class ClusterInfo: #I want to keep everything organized in one place
-    def __init__(self, data):
-        self.cluster_sizes = {i: 1 for i in range(len(data))}  #Keep track of size of each cluster, instead of recounting
-        self.centroids = {i: data[i] for i in range(len(data))}  #Keeps track of cluster center for each data, instead of recalculating
+    def _euclidean_distance(self, centroid1, centroid2):
+        return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
 
+    def _initialize_clusters(self):
+        self.cluster_sizes = {i: 1 for i in range(len(self.data))}  #Keep track of size of each cluster, instead of recounting
+        self.centroids = {i: self.data[i] for i in range(len(self.data))}  #Keeps track of cluster center for each data, instead of recalculating
         self.distances = defaultdict(dict) #ABSOLUTE FUCKING OVERKILL, we should already know whether points exist or not given the fact that we create them in order but I want to use something new anyway, also less checks :D
-        self._initialize_distances(data)
+        self._initialize_distances()
     
-    def _initialize_distances(self, data):
-        for i in range(len(data)):
-            for j in range(i + 1, len(data)): #Only upper traingle for speed purposes
+    def _initialize_distances(self):
+        for i in range(len(self.data)):
+            for j in range(i + 1, len(self.data)): #Only upper traingle for speed purposes
                 distance = self._calculate_ward_distance(i, j)
                 self.distances[i][j] = distance
     
@@ -38,10 +46,10 @@ class ClusterInfo: #I want to keep everything organized in one place
         centroid1 = self.centroids[label1]
         centroid2 = self.centroids[label2]
 
-        squared_dist = euclidean_distance(centroid1, centroid2) ** 2
+        squared_dist = self._euclidean_distance(centroid1, centroid2) ** 2
         return (n1 * n2) / (n1 + n2) * squared_dist
     
-    def find_closest_clusters(self):
+    def _find_closest_clusters(self):
         min_distance = float('inf') #Maybe better way exists
         min_pair = None
 
@@ -56,9 +64,8 @@ class ClusterInfo: #I want to keep everything organized in one place
         else:
             return min_pair, min_distance        
 
-    def update_cluster(self, label1, label2):
+    def _update_cluster(self, label1, label2):
         ##Merge label 2 INTO label 1
-
 
         #NOTE: To future me
 
@@ -80,7 +87,6 @@ class ClusterInfo: #I want to keep everything organized in one place
         self._update_distances(label1, label2)
     
     def _update_distances(self, label1, label2):
-
         if label2 in self.distances:
             del self.distances[label2]
         for label in self.distances:
@@ -91,7 +97,6 @@ class ClusterInfo: #I want to keep everything organized in one place
         
         for cluster_id in existing_labels:
             if cluster_id != label1:
-
                 ##According to wizards
 
                 #In a nested dictionary
@@ -110,34 +115,45 @@ class ClusterInfo: #I want to keep everything organized in one place
                 larger_cluster = max(label1, cluster_id) #Inner key
                 self.distances[smaller_cluster][larger_cluster] = self._calculate_ward_distance(smaller_cluster, larger_cluster)
 
-def hierarchical_cluster(data, n_clusters=2):
-    cluster_labels = np.arange(len(data))
-    cluster_info = ClusterInfo(data)
-
-    while len(np.unique(cluster_labels)) > n_clusters:
-        (label1, label2), min_distance = cluster_info.find_closest_clusters()
-
-        if label1 is None:
-            break
-
-        cluster_labels[cluster_labels == label2] = label1 #Array masking black magic I found on the deep web.
-        cluster_info.update_cluster(label1, label2) #Also check notebook on how array masking works
+    def _hierarchical_cluster(self):
+        cluster_labels = np.arange(len(self.data))
         
-        print(f"Merged {label1}, {label2}")
-        print(np.unique(cluster_labels))
+        while len(np.unique(cluster_labels)) > self.n_clusters:
+            (label1, label2), min_distance = self._find_closest_clusters()
+            
+            if label1 is None:
+                break
+            
+            cluster_labels[cluster_labels == label2] = label1 #Array masking black magic I found on the deep web.
+            self._update_cluster(label1, label2) #Also check notebook on how array masking works
+            
+            print(f"Merged {label1}, {label2}")
+            print(np.unique(cluster_labels))
 
-    return cluster_labels
+        return cluster_labels
 
-input_filename = 'iris.data.data'
+    def fit(self):
+        df = pd.read_csv(self.filename, header=None)
+        self.data = df.to_numpy()
+        self._initialize_clusters()
+        
+        self.labels_ = self._hierarchical_cluster()
+        return self.labels_
 
-df = pd.read_csv(input_filename, header = None)
-Y = df.to_numpy()
-cluster_labels = np.arange(len(Y))
-final_labels = hierarchical_cluster(Y, n_clusters=3)
+    def save_predictions(self, output_filename=None):
+        if self.labels_ is None:
+            raise ValueError("Must call fit() before saving predictions")
+            
+        if output_filename is None:
+            base_filename = self.filename.split('.')[0]  #Split for . bc im lazy :)
+            output_filename = f"{base_filename}.predicted"
+            
+        with open(output_filename, 'w') as f: #Each on a new line to mimic rows, hopefully this works
+            for label in self.labels_:
+                f.write(f"{label}\n")
 
-base_filename = input_filename.split('.')[0]  #Split for . bc im lazy :)
-output_filename = f"{base_filename}.predicted"
-
-with open(output_filename, 'w') as f: #Each on a new line to mimic rows, hopefully this works
-    for label in final_labels:
-        f.write(f"{label}\n")
+if __name__ == "__main__":
+    input_filename = 'iris.data.data'
+    wards = Wards(filename=input_filename, n_clusters=3)
+    wards.fit()
+    wards.save_predictions()

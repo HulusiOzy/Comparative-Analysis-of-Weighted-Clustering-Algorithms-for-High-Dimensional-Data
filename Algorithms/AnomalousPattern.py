@@ -1,62 +1,83 @@
 import pandas as pd
 import numpy as np
 
-def calculating_gravity_center(data_points):
-    N = len(data_points) #maybe use .shape[0] if some datasets give issues
-    gravity_center = (np.sum(data_points, axis=0) / N) # (1/N) * (Σ y_{iv})
-    return gravity_center
-
-def getting_the_furthest_point_from(point, data_points):
-    distances = np.sum((data_points - point) ** 2, axis=1) # Σ(y_iv - point)^2
-    furthest = np.argmax(distances)
-    return data_points[furthest]
-
-def min_distance_rule(centroid, grand_mean, data_points):
-    cluster_assignments = {} #Maybe dont store in a dictionary
-    for i, point in enumerate(data_points):
-        dist_to_c = np.sum((point - centroid)**2) # Σ(y_iv - point)^2
-        dist_to_mean = np.sum((point - grand_mean)**2) # Σ(y_iv - point)^2
-        if dist_to_c < dist_to_mean:
-            cluster_assignments[i] = 1 # 1 = centroid
-        else:
-            cluster_assignments[i] = 0 # 0 = grand mean
-    return cluster_assignments
-
-def cluster_recenter(S, data_points):
-    temp_data_points = []
-    for i in range(len(data_points)):
-        if S[i] == 1:
-            temp_data_points.append(data_points[i])
-    if len(temp_data_points) == 0: #Just incase
-        return None
-    return calculating_gravity_center(temp_data_points)
-
-input_filename = 'iris.data.data'
-df = pd.read_csv(input_filename, header = None)
-data_points = df.to_numpy()
-
-
-counter = 1
-grand_mean = calculating_gravity_center(data_points)
-c = getting_the_furthest_point_from(grand_mean, data_points)
-old_S = None
-
-while True:
-    S = min_distance_rule(c, grand_mean, data_points)
-    print(f"It {counter}: {S} \n")
-    
-    if old_S == S: #Transfer S from a dictionary to a np array then use np.array_equal to check
-        break
+class AnomalousPattern:
+    def __init__(self, filename='iris.data'):
+        self.filename = filename
+        self.labels_ = None
+        self.grand_mean_ = None
+        self.centroid_ = None
         
-    old_S = S
-    c = cluster_recenter(S, data_points)
-    counter += 1
+    def _distance(self, point1, point2, distance_type='single'):
+        if distance_type == 'single':
+            return np.sum((point1 - point2)**2)
+        elif distance_type == 'one_to_many':
+            return np.sum((point1 - point2) ** 2, axis=1)
+        else:
+            raise ValueError(f"Unknown distance_type: {distance_type}")
 
-base_filename = input_filename.split('.')[0]  #Split for . bc im lazy :)
-output_filename = f"{base_filename}.predicted"
+    def _calculating_gravity_center(self, data_points):
+        N = len(data_points) #Couldve used .shape[0] dont know whats faster
+        gravity_center = (np.sum(data_points, axis=0) / N) # (1/N) * (Σ y_{iv})
+        return gravity_center
+    
+    def _getting_the_furthest_point_from(self, point, data_points):
+        distances = self._distance(data_points, point, distance_type='one_to_many') # Σ(y_iv - point)^2
+        furthest = np.argmax(distances)
+        return data_points[furthest]
+    
+    def _min_distance_rule(self, centroid, grand_mean, data_points):
+        cluster_assignments = {} #Really dumb to store in a dictionary BUT it doesnt need to be changed YET
+        for i, point in enumerate(data_points):
+            dist_to_c = self._distance(point, centroid) # Σ(y_iv - point)^2
+            dist_to_mean = self._distance(point, grand_mean) # Σ(y_iv - point)^2
+            if dist_to_c < dist_to_mean:
+                cluster_assignments[i] = 1  # 1 = centroid
+            else:
+                cluster_assignments[i] = 0  # 0 = grand mean
+        return cluster_assignments
+    
+    def _cluster_recenter(self, S, data_points):
+        temp_data_points = []
+        for i in range(len(data_points)):
+            if S[i] == 1:
+                temp_data_points.append(data_points[i])
+        if len(temp_data_points) == 0: #You never know
+            return None
+        return self._calculating_gravity_center(temp_data_points)
+    
+    def fit(self):
+        df = pd.read_csv(self.filename, header=None)
+        data_points = df.to_numpy()
+        
+        counter = 1
+        self.grand_mean_ = self._calculating_gravity_center(data_points)
+        self.centroid_ = self._getting_the_furthest_point_from(self.grand_mean_, data_points)
+        old_S = None
+        
+        while True:
+            S = self._min_distance_rule(self.centroid_, self.grand_mean_, data_points)
+            print(f"It {counter}: {S} \n")
+            
+            if old_S == S:
+                break
+                
+            old_S = S
+            self.centroid_ = self._cluster_recenter(S, data_points)
+            counter += 1
+        
+        self.labels_ = [S[i] for i in range(len(data_points))]
+        return self.labels_
 
-final_labels = [S[i] for i in range(len(data_points))] #Convert dictionary to ordered list
-
-with open(output_filename, 'w') as f:  #Each on a new line to mimic rows
-    for label in final_labels:
-        f.write(f"{label}\n")
+if __name__ == "__main__":
+    input_filename = 'iris.data.data'
+    ap = AnomalousPattern(filename=input_filename)
+    
+    final_labels = ap.fit()
+    
+    base_filename = input_filename.split('.')[0]
+    output_filename = f"{base_filename}.predicted"
+    
+    with open(output_filename, 'w') as f:
+        for label in final_labels:
+            f.write(f"{label}\n")

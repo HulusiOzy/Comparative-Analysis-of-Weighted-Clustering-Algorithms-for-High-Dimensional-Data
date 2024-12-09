@@ -2,20 +2,30 @@ import pandas as pd
 import numpy as np
 import heapq
 
-def euclidean_distance(centroid1, centroid2):
-    return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
+class WardsHeap:
+    def __init__(self, filename='iris.data', n_clusters=3):
+        self.filename = filename
+        self.n_clusters = n_clusters
+        self.labels_ = None
+        self.data = None
+        self.cluster_sizes = None
+        self.centroids = None
+        self.distance_heap = None
+        self.cluster_versions = None
 
-class ClusterInfo:
-    def __init__(self, data):
-        self.cluster_sizes = {i: 1 for i in range(len(data))}
-        self.centroids = {i: data[i] for i in range(len(data))}
+    def _euclidean_distance(self, centroid1, centroid2):
+        return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
+
+    def _initialize_clusters(self):
+        self.cluster_sizes = {i: 1 for i in range(len(self.data))}
+        self.centroids = {i: self.data[i] for i in range(len(self.data))}
         self.distance_heap = [] #Priority queue because why not
-        self.cluster_versions = {i: 0 for i in range(len(data))}
-        self._initialize_distances(data)
+        self.cluster_versions = {i: 0 for i in range(len(self.data))}
+        self._initialize_distances()
     
-    def _initialize_distances(self, data):
-        for i in range(len(data)):
-            for j in range(i + 1, len(data)):
+    def _initialize_distances(self):
+        for i in range(len(self.data)):
+            for j in range(i + 1, len(self.data)):
                 distance = self._calculate_ward_distance(i, j)
                 heapq.heappush(self.distance_heap, (distance, i, j, self.cluster_versions[i], self.cluster_versions[j]))#Store as (distance, smaller_label, larger_label)
     
@@ -24,10 +34,10 @@ class ClusterInfo:
         n2 = self.cluster_sizes[label2]
         centroid1 = self.centroids[label1]
         centroid2 = self.centroids[label2]
-        squared_dist = euclidean_distance(centroid1, centroid2) ** 2
+        squared_dist = self._euclidean_distance(centroid1, centroid2) ** 2
         return (n1 * n2) / (n1 + n2) * squared_dist
     
-    def find_closest_clusters(self):
+    def _find_closest_clusters(self):
         while self.distance_heap:
             distance, label1, label2, ver1, ver2 = heapq.heappop(self.distance_heap)
             if (label1 in self.cluster_versions and 
@@ -37,7 +47,7 @@ class ClusterInfo:
                 return (label1, label2), distance
         return (None, None), float('inf')
     
-    def update_cluster(self, label1, label2):
+    def _update_cluster(self, label1, label2):
         n1 = self.cluster_sizes[label1]
         n2 = self.cluster_sizes[label2]
         c1 = self.centroids[label1]
@@ -63,36 +73,49 @@ class ClusterInfo:
                               self.cluster_versions[smaller_cluster],
                               self.cluster_versions[larger_cluster]))
 
-def hierarchical_cluster(data, n_clusters=2):
-    cluster_labels = np.arange(len(data))
-    cluster_info = ClusterInfo(data)
-    
-    while len(np.unique(cluster_labels)) > n_clusters:
-        (label1, label2), min_distance = cluster_info.find_closest_clusters()
+    def _hierarchical_cluster(self):
+        cluster_labels = np.arange(len(self.data))
         
-        if label1 is None:
-            break
+        while len(np.unique(cluster_labels)) > self.n_clusters:
+            (label1, label2), min_distance = self._find_closest_clusters()
             
-        cluster_labels[cluster_labels == label2] = label1
-        cluster_info.update_cluster(label1, label2)
+            if label1 is None:
+                break
+                
+            cluster_labels[cluster_labels == label2] = label1
+            self._update_cluster(label1, label2)
+            
+            print(f"Merged {label1}, {label2}")
+            print(np.unique(cluster_labels))
+
+        print("\nFinal cluster assignments:")
+        assignments = [f"{i} = {cluster_labels[i]}" for i in range(len(cluster_labels))]
+        print("[" + ", ".join(assignments) + "]")
         
-        print(f"Merged {label1}, {label2}")
-        print(np.unique(cluster_labels))
+        return cluster_labels
 
-    print("\nFinal cluster assignments:")
-    assignments = [f"{i} = {cluster_labels[i]}" for i in range(len(cluster_labels))]
-    print("[" + ", ".join(assignments) + "]")
-    
-    return cluster_labels
+    def fit(self):
+        df = pd.read_csv(self.filename, header=None)
+        self.data = df.to_numpy()
+        self._initialize_clusters()
+        
+        self.labels_ = self._hierarchical_cluster()
+        return self.labels_
 
-df = pd.read_csv('heart_failure_clinical_records_dataset.csv.data', header = None)
-Y = df.to_numpy()
-final_labels = hierarchical_cluster(Y, n_clusters=1)
+    def save_predictions(self, output_filename=None):
+        if self.labels_ is None: #MVP level check right here
+            raise ValueError("Must call fit() before saving predictions")
+            
+        if output_filename is None:
+            base_filename = self.filename.split('.')[0]  #Split for . bc im lazy :)
+            output_filename = f"{base_filename}.predicted"
+            
+        with open(output_filename, 'w') as f: #Each on a new line to mimic rows, hopefully this works
+            for label in self.labels_:
+                f.write(f"{label}\n")
 
-input_filename = 'heart_failure_clinical_records_dataset.csv.data'
-base_filename = input_filename.split('.')[0]  #Split for . bc im lazy :)
-output_filename = f"{base_filename}.predicted"
-
-with open(output_filename, 'w') as f: #Each on a new line to mimic rows, hopefully this works
-    for label in final_labels:
-        f.write(f"{label}\n")
+if __name__ == "__main__":
+    input_filename = 'heart_failure_clinical_records_dataset.csv.data'
+    wards_heap = WardsHeap(filename=input_filename, n_clusters=1)
+    wards_heap.fit()
+    wards_heap.save_predictions()

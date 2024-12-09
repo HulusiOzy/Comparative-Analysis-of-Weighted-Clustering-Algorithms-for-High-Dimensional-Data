@@ -5,21 +5,30 @@ from collections import defaultdict #For missing keys
 # Length of each value between clusters is
 # (|A| . |B|)^-1 . sum{x∈A} sum{x∈B} d(x,y)
 
-def euclidean_distance(centroid1, centroid2):
-    return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
-
-class ClusterInfo:
-    def __init__(self, data):
-        self.data = data  #Slight differences from Ward's :D
-        self.cluster_sizes = {i: 1 for i in range(len(data))}
-        self.cluster_points = {i: [i] for i in range(len(data))} #For UPGMA instead of storing centroids we store points
-        
-        self.distances = defaultdict(dict)
-        self._initialize_distances(data)
+#Will need some vectorization later down the line but this should be fine
+class UPGMA:
+    def __init__(self, filename='iris.data', n_clusters=3):
+        self.filename = filename
+        self.n_clusters = n_clusters
+        self.labels_ = None
+        self.data = None
+        self.cluster_sizes = None
+        self.cluster_points = None
+        self.distances = None
     
-    def _initialize_distances(self, data):
-        for i in range(len(data)):
-            for j in range(i + 1, len(data)): #Only upper traingle for speed purposes
+    def _euclidean_distance(self, centroid1, centroid2):
+        return np.sqrt(np.sum((centroid1 - centroid2) ** 2))
+
+    #Moved actual inits here because im expanding this class, if I see fit will move it back to __init__
+    def _initialize_clusters(self):
+        self.cluster_sizes = {i: 1 for i in range(len(self.data))} #For dict of cluster sizes/ how many points in each cluser
+        self.cluster_points = {i: [i] for i in range(len(self.data))} #For dict of cluster points/ check notebook for simple example if you end up frogetting
+        self.distances = defaultdict(dict)
+        self._initialize_distances()
+
+    def _initialize_distances(self):
+        for i in range(len(self.data)):
+            for j in range(i + 1, len(self.data)): #Only upper traingle for speed purposes
                 distance = self._calculate_upgma_distance(i, j)
                 self.distances[i][j] = distance
 
@@ -31,11 +40,11 @@ class ClusterInfo:
         total_distance = 0
         for point1 in points1:
             for point2 in points2:
-                total_distance += euclidean_distance(point1, point2)
+                total_distance += self._euclidean_distance(point1, point2)
         
         return total_distance / (len(points1) * len(points2)) # (|A| . |B|)^-1 . sum{x∈A} sum{x∈B} d(x,y)
     
-    def find_closest_clusters(self):
+    def _find_closest_clusters(self):
         min_distance = float('inf')
         min_pair = None
 
@@ -50,7 +59,7 @@ class ClusterInfo:
         else:
             return min_pair, min_distance
     
-    def update_cluster(self, label1, label2):
+    def _update_cluster(self, label1, label2):
         ##Merge label 2 INTO label 1
 
         #Merge/Update 1
@@ -79,35 +88,48 @@ class ClusterInfo:
                 smaller_cluster = min(label1, cluster_id)
                 larger_cluster = max(label1, cluster_id)
                 self.distances[smaller_cluster][larger_cluster] = self._calculate_upgma_distance(smaller_cluster, larger_cluster)
-
-def hierarchical_cluster(data, n_clusters):
-    cluster_labels = np.arange(len(data))
-    cluster_info = ClusterInfo(data)
     
-    while len(np.unique(cluster_labels)) > n_clusters:
-        (label1, label2), min_distance = cluster_info.find_closest_clusters()
+    #Moved this into the class, for future self: This just runs the functions above, shouldnt really do anything more
+    #If more is needed consider making a new class :D
+    def _hierarchical_cluster(self):
+        cluster_labels = np.arange(len(self.data))
         
-        if label1 is None:
-            break
+        while len(np.unique(cluster_labels)) > self.n_clusters:
+            (label1, label2), min_distance = self._find_closest_clusters()
+            
+            if label1 is None:
+                break
+            
+            cluster_labels[cluster_labels == label2] = label1
+            self._update_cluster(label1, label2)
+            
+            print(f"Merged {label1}, {label2}")
+            print(np.unique(cluster_labels))
+
+        return cluster_labels
+
+    def fit(self):
+        df = pd.read_csv(self.filename, header=None)
+        self.data = df.to_numpy()
+        self._initialize_clusters()
         
-        cluster_labels[cluster_labels == label2] = label1
-        cluster_info.update_cluster(label1, label2)
-        
-        print(f"Merged {label1}, {label2}")
-        print(np.unique(cluster_labels))
+        self.labels_ = self._hierarchical_cluster()
+        return self.labels_
 
-    return cluster_labels
+    def save_predictions(self, output_filename=None):
+        if self.labels_ is None: #BIGTIME ERROR CHECKING
+            raise ValueError("Must call fit() before saving predictions")
+            
+        if output_filename is None:
+            base_filename = self.filename.split('.')[0]
+            output_filename = f"{base_filename}.predicted"
+            
+        with open(output_filename, 'w') as f:
+            for label in self.labels_:
+                f.write(f"{label}\n")
 
-input_filename = 'iris.data.data'
-
-df = pd.read_csv(input_filename, header = None)
-Y = df.to_numpy()
-cluster_labels = np.arange(len(Y))
-final_labels = hierarchical_cluster(Y, 3)
-
-base_filename = input_filename.split('.')[0]
-output_filename = f"{base_filename}.predicted"
-
-with open(output_filename, 'w') as f:
-    for label in final_labels:
-        f.write(f"{label}\n")
+if __name__ == "__main__":
+    input_filename = 'Depression Student Dataset.csv.data'
+    upgma = UPGMA(filename=input_filename, n_clusters=2)
+    upgma.fit()
+    upgma.save_predictions()
