@@ -143,6 +143,7 @@ class Preprocessing:
 if __name__ == "__main__":
     preprocessor = Preprocessing()
     
+    #Genius use of OR btw
     preprocessor.input_file = input("Enter input file (default: heart_failure_clinical_records_dataset.csv): ").strip() or 'heart_failure_clinical_records_dataset.csv'
     preprocessor.column_style = input("Use letters or numbers for column selection? (L/N, default: L): ").strip().upper() or 'L'
     preprocessor.target_column = input("Enter target column (default: last column): ").strip()

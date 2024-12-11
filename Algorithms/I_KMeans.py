@@ -15,12 +15,12 @@ class IKMeans:
     #I think this is what they meant by overengineering
     def _distance(self, point1, point2, distance_type='single'):
         if distance_type == 'single':
-            return np.sum((point1 - point2)**2)
+            return np.sum((point1 - point2)**2) #Needless
         elif distance_type == 'one_to_many':
             return np.sum((point1 - point2) ** 2, axis=1)
         elif distance_type == 'many_to_many':
-            return np.sum((point1 - point2) ** 2)
-        else:
+            return np.sum((point1 - point2) ** 2) #Needless
+        else: #Needed :D
             raise ValueError(f"Unknown distance_type: {distance_type}")
 
     def _calculating_gravity_center(self, data_points):

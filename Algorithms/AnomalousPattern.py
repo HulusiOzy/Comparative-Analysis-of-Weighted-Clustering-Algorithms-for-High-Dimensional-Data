@@ -7,12 +7,16 @@ class AnomalousPattern:
         self.labels_ = None
         self.grand_mean_ = None
         self.centroid_ = None
-        
+ 
+    #Cooked this up last night while turning AP into a class
+    #Youre prolly gonna look at this and go "whats the point of this? they are both np.sum anyways"
+    #And I will say ur wrong bc this is vectorization so I dont have one liner loops that make the code look disgusting
+    #Trust hulusi of the past and dont remove this
     def _distance(self, point1, point2, distance_type='single'):
         if distance_type == 'single':
             return np.sum((point1 - point2)**2)
         elif distance_type == 'one_to_many':
-            return np.sum((point1 - point2) ** 2, axis=1)
+            return np.sum((point1 - point2) ** 2, axis=1) #For laterall sum, sum across features
         else:
             raise ValueError(f"Unknown distance_type: {distance_type}")
 
@@ -48,9 +52,9 @@ class AnomalousPattern:
     
     def fit(self):
         df = pd.read_csv(self.filename, header=None)
-        data_points = df.to_numpy()
+        data_points = df.to_numpy() #I thought about this before but initing it here is more memory efficent, why idk just trust me
         
-        counter = 1
+        counter = 1 #Just to keep track, book says it so I do it
         self.grand_mean_ = self._calculating_gravity_center(data_points)
         self.centroid_ = self._getting_the_furthest_point_from(self.grand_mean_, data_points)
         old_S = None

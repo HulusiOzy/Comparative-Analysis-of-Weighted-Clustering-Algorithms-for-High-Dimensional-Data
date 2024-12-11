@@ -29,9 +29,9 @@ algos = {1: KMeans, 2: AnomalousPattern, 3: IKMeans, 4: WKMeans,
 def cleanup_generated_files(dataset_name):
     base_filename = dataset_name.split('.')[0]
     generated_extensions = [
-        '.data',      #From preprocessing
-        '.actual',    #From preprocessing
-        '.predicted'  # From algorithm execution
+        '.data',
+        '.actual',
+        '.predicted'
     ]    
     for ext in generated_extensions:
         filepath = f"{base_filename}{ext}"
@@ -93,7 +93,7 @@ def run_algos(dataset_filename, selected_dataset, number_of_clusters):
         print("Beta value:")
         beta_value = float(input())
         algorithm_instance = selected_algorithm(filename=dataset_filename, k=number_of_clusters, beta=beta_value)
-    elif algorithm_choice in [1, 3]:  # KMeans, IKMeans
+    elif algorithm_choice in [1, 3]:  #Means, IKMeans
         algorithm_instance = selected_algorithm(filename=dataset_filename, k=number_of_clusters)
     elif algorithm_choice == 2:  #AnomalousPattern
         algorithm_instance = selected_algorithm(filename=dataset_filename)
