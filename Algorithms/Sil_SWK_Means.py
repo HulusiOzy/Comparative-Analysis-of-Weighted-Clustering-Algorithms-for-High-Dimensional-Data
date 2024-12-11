@@ -1,6 +1,8 @@
 import pandas as pd 
 import numpy as np 
 import random
+import os
+from Tools.Silhouette_Index import SilhouetteIndex
 
 ##We have lots of formulas to go through, but the basic one is
 
@@ -52,15 +54,31 @@ import random
 #Step 4: Fix U and Z, and solve the problem P(U^, Z^, W). If P(U^t, Z^, W^t+1) = P(U^, Z^, W^t), then output P(U^, Z^, W^t) and stop. If not go to step 2.
 
 class SWKMeans:
-    def __init__(self, filename='iris.data', k=3, beta=2):
+    def __init__(self, filename='iris.data', k=3, beta=2, metric='p0'):
         self.filename = filename
         self.k = k
         self.beta = beta
+        self.metric = metric.lower()  #P0 or S(i)
         self.labels_ = None
         self.weights_ = None
         self.centroids_ = None
         self.partition_matrix_ = None
         self.data = None
+
+    def _save_temp_predictions(self, labels):
+        base_filename = self.filename.split('.')[0]
+        temp_pred_file = f"{base_filename}.predicted"
+        with open(temp_pred_file, 'w') as f:
+            for label in labels:
+                f.write(f"{label}\n")
+        return temp_pred_file
+
+    def _calculate_silhouette(self, labels):
+        temp_pred_file = self._save_temp_predictions(labels)
+        silhouette = SilhouetteIndex(self.filename, temp_pred_file)
+        score = silhouette.fit()
+        os.remove(temp_pred_file)  #Clean up temporary files
+        return score
 
     #No squareroot euclidean distance
     def _distance(self, x, z, categorical=False):
@@ -216,28 +234,19 @@ class SWKMeans:
 
             prev_P0 = curr_P0
         
-        return np.argmax(U, axis=1), W, Z, U
+        return np.argmax(U, axis=1), W, Z, U, curr_P0
 
     def fit(self):
         df = pd.read_csv(self.filename, header=None)
         self.data = df.to_numpy()
         
-        best_p0 = float('inf')
+        self.labels_, self.weights_, self.centroids_, self.partition_matrix_, p0_value = self._run_swkmeans(self.data)
         
-        for i in range(1):
-            clusters, W, Z, U = self._run_swkmeans(self.data)
-            curr_p0 = self._P0(self.data, U, Z, W)
-            print(f"Run {i+1} P0: {curr_p0}")
-            
-            if curr_p0 < best_p0: #Scenario where P0 value of 26.98 is bigger than P0 value of 26.63 but still gives higher accuracy value
-                best_p0 = curr_p0
-                self.labels_ = clusters
-                self.weights_ = W
-                self.centroids_ = Z
-                self.partition_matrix_ = U
-                print(f"New best P0: {best_p0}")
-                
-        return self.labels_
+        if self.metric == 'p0':
+            return self.labels_, p0_value
+        else:  #Silhouette, other metrics later.
+            silhouette_score = self._calculate_silhouette(self.labels_)
+            return self.labels_, silhouette_score
 
     def save_predictions(self, output_filename=None):
         if self.labels_ is None:
@@ -251,8 +260,55 @@ class SWKMeans:
             for label in self.labels_:
                 f.write(f"{label}\n")
 
-if __name__ == "__main__":
+def method1():
+    ##NOTE TO FUTURE SELF
+    #1. Run 50 iters for each beta value
+    #2. Out of the greatest labels/inits of each iter find the highest Si amongst them
     input_filename = 'iris.data.data'
-    swkmeans = SWKMeans(filename=input_filename, k=3, beta=2)
-    swkmeans.fit()
-    swkmeans.save_predictions()
+    best_runs = {}
+    
+    for i in range(11, 50):
+        beta = i/10
+        best_p0 = float('inf')
+        best_labels = None
+        for _ in range(50):
+            swkmeans = SWKMeans(filename=input_filename, k=3, beta=beta, metric='p0')
+            labels, p0 = swkmeans.fit()
+            if p0 < best_p0:  #This right here is poetry
+                best_p0 = p0
+                best_labels = labels.copy()
+        best_runs[beta] = best_labels
+
+    betas = np.array(list(best_runs.keys()))
+    si_values = np.zeros(len(betas))
+    
+    for i, beta in enumerate(betas):
+        swkmeans = SWKMeans(filename=input_filename, k=3, beta=beta, metric='si')
+        si_values[i] = swkmeans._calculate_silhouette(best_runs[beta])
+    
+    best_beta = betas[np.argmax(si_values)]
+    print(best_beta)
+
+def method2():
+    #OR
+    #Run 50 iters of different beta for highest Si, get the one which has highest Si
+    input_filename = 'iris.data.data'
+    best_si = float('-inf')
+    best_beta = None
+    best_labels = None
+    
+    for i in range(11, 50):
+        beta = i/10
+        for _ in range(50):
+            swkmeans = SWKMeans(filename=input_filename, k=3, beta=beta, metric='si')
+                labels, si = swkmeans.fit()
+                if si > best_si:
+                    best_si = si
+                    best_beta = beta
+                    best_labels = labels
+        
+        print(best_beta)
+
+if __name__ == "__main__":  #Just for testing the best beta value
+    method1()
+    method2()

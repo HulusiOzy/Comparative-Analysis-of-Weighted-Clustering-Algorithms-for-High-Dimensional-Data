@@ -41,7 +41,8 @@ class SilhouetteIndex:
             cluster_points = points[same_cluster_mask] #Put the mask into a list
             
             if len(cluster_points) > 0: #Super unnecessary
-                distances = np.sum(np.abs(cluster_points - current_point), axis=1) #Sum of distances to other points in the same cluster
+                #distances = np.sum(np.abs(cluster_points - current_point), axis=1) #Sum of distances to other points in the same cluster
+                distances = np.sum((cluster_points - current_point)**2, axis=1) # Euclidean distance
                 ai_values[i] = np.sum(distances) / len(cluster_points)
         
         return ai_values
@@ -69,7 +70,8 @@ class SilhouetteIndex:
                 other_cluster_points = points[other_cluster_mask] #Put the mask into a list
                 
                 if len(other_cluster_points) > 0: #Super unnecessary
-                    distances = np.sum(np.abs(other_cluster_points - current_point), axis=1) #Sum of distances to other points in the different cluster
+                    #distances = np.sum(np.abs(other_cluster_points - current_point), axis=1) #Sum of distances to other points in the different cluster
+                    distances = np.sum((other_cluster_points - current_point)**2, axis=1)
                     cluster_average = np.mean(distances)
                     cluster_averages.append(cluster_average)
             
