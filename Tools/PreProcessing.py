@@ -14,7 +14,7 @@ class Preprocessing:
         self.processed_df = None
         
     def _is_excel_file(self, filename):
-            ##For personal use
+        ##For personal use
         ##Change if needed
         ##Convert to excel style column letters to number based
         ##A = 1, B = 2
@@ -89,7 +89,7 @@ class Preprocessing:
             categories = column.unique() #I should find a way to use set here instead of .unique
             category_mapping = {cat: i for i, cat in enumerate(sorted(categories))} #Create map of unqiue cat's to numbers
 
-            numerical_column = column.map(category_mapping) #Convert categories to numbers
+            numerical_column = column.map(category_mapping).fillna(0)  #FIXME: Dumb temporary fix, properly handle non Yes/No values later
             
             print("\nCategory to number mapping:") #Print the mapping for reference
             for cat, num in category_mapping.items():

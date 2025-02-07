@@ -35,7 +35,7 @@ class MinkowskiMetric:
             c_j = ((1/|C|) * ∑|x_ij|^p)^(1/p)
             where |C| is number of points in cluster
         '''
-        if not points:
+        if len(points) == 0 or points.size == 0: #Thank god I added this check
             raise ValueError("Cannot calculate center of empty cluster")
             
         n_dims = len(points[0])

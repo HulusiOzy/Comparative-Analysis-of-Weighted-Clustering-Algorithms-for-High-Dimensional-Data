@@ -1,128 +1,126 @@
-import numpy as np
 import pandas as pd
-import random
-import heapq
-import os
-from itertools import permutations
-from collections import defaultdict
+import numpy as np
 
-from Algorithms.Straight_K_Means import KMeans
-from Algorithms.AnomalousPattern import AnomalousPattern
-from Algorithms.I_KMeans import IKMeans
-from Algorithms.W_KMeans import WKMeans
-from Algorithms.SW_KMeans import SWKMeans
-from Algorithms.UPGMA import UPGMA
-from Algorithms.Wards_Method import Wards
-from Algorithms.Wards_Method_Heap import WardsHeap
-from Tools.PreProcessing import Preprocessing
-from Tools.Silhouette_Index import SilhouetteIndex
-from Tools.Table_of_Confusion import TableOfConfusion
-from Metrics.MinkowskiMetric import MinkowskiMetric
+from functions import (
+    list_datasets, list_algorithms, list_tools,
+    save, load, drop, init_weights,
+    confusion_matrix, ari, pca, silhouette_index,
+    data, predicted, centers, weights
+)
+from algorithms import (
+    kmeans, wkmeans, swkmeans,
+    mwkmeans, upgma, wards, iap
+)
 
-#
-# THIS JUST EXISTS FOR TESTING EASILY
-#
+__all__ = [
+    'list_datasets', 'list_algorithms', 'list_tools',
+    'save', 'load', 'save_results', 'drop'
 
-algos = {1: KMeans, 2: AnomalousPattern, 3: IKMeans, 4: WKMeans, 
-         5: SWKMeans, 6: UPGMA, 7: Wards, 8: WardsHeap}
+    'confusion_matrix', 'ari', 'pca', 'silhouette_index',
 
-def cleanup_generated_files(dataset_name):
-    base_filename = dataset_name.split('.')[0]
-    generated_extensions = [
-        '.data',
-        '.actual',
-        '.predicted'
-    ]    
-    for ext in generated_extensions:
-        filepath = f"{base_filename}{ext}"
-        if os.path.exists(filepath):
-                os.remove(filepath)
+    'kmeans', 'wkmeans', 'swkmeans',
+    'mwkmeans', 'upgma', 'wards',
 
-    #To clean up the temporary dataset copy if it exists
-    if os.path.exists(dataset_name) and dataset_name.startswith(tuple(['iris', 'search', 'performance', 'depression', 'heart'])):
-        print(f"Removed temporary dataset copy: {dataset_name}")
+    'data', 'predicted', 'centers', 'weights'
 
-def write_cluster_assignments(labels, output_filename):
-    with open(output_filename, 'w') as f:
-        for label in labels:
-            f.write(f"{label}\n")
+    'actual', 'predicted', 'accuracy', 'ari'
+]
 
-def load_datasets():
-    datasets = {'iris': 'Datasets/iris.data', 'search': 'Datasets/search_engine_data.csv',
-               'performance': 'Datasets/StudentPerformanceFactors.csv',
-               'depression': 'Datasets/Depression Student Dataset.csv',
-               'heart': 'Datasets/heart_failure_clinical_records_dataset.csv'}
-    dfs = {}
-    for name, path in datasets.items():
-        dfs[name] = pd.read_csv(path)
-    return dfs
+import functions
+import algorithms
+import numpy as np
 
-def pre_processing():
-    df_names = {'iris': 'iris.data', 'search': 'search_engine_data.csv',
-                'performance': 'StudentPerformanceFactors.csv',
-                'depression': 'Depression Student Dataset.csv',
-                'heart': 'heart_failure_clinical_records_dataset.csv'}
-    print("1. iris.data")
-    print("2. search_engine_data.csv")
-    print("3. StudentPerformanceFactors.csv")
-    print("4. Depression Student Dataset.csv")
-    print("5. heart_failure_clinical_records_dataset.csv")
-    dataset_choice = int(input())
-    selected_dataset = list(df_names.values())[dataset_choice - 1]
-    dfs = load_datasets()
-    dfs[list(df_names.keys())[dataset_choice - 1]].to_csv(selected_dataset, index=False, header=False)
-    preprocessor = Preprocessing(selected_dataset)
-    processed_file, actual_file = preprocessor.fit()
-    actual_labels = pd.read_csv(actual_file, header=None)
-    number_of_clusters = len(set(actual_labels[0]))
-    return processed_file, number_of_clusters, selected_dataset
-
-def run_algos(dataset_filename, selected_dataset, number_of_clusters):
-    print("1. KMeans")
-    print("2. AnomalousPattern")
-    print("3. IKMeans")
-    print("4. WKMeans")
-    print("5. SWKMeans")
-    print("6. UPGMA")
-    print("7. Wards")
-    print("8. WardsHeap")
-    algorithm_choice = int(input())
-    selected_algorithm = algos[algorithm_choice]
+def feature_removal():
+    impact_dict = {}
     
-    if algorithm_choice in [4, 5]:#S/WKMeans
-        print("Beta value:")
-        beta_value = float(input())
-        algorithm_instance = selected_algorithm(filename=dataset_filename, k=number_of_clusters, beta=beta_value)
-    elif algorithm_choice in [1, 3]:  #Means, IKMeans
-        algorithm_instance = selected_algorithm(filename=dataset_filename, k=number_of_clusters)
-    elif algorithm_choice == 2:  #AnomalousPattern
-        algorithm_instance = selected_algorithm(filename=dataset_filename)
-    else:  #UPGMA, Wards, WardsHeap
-        algorithm_instance = selected_algorithm(filename=dataset_filename, n_clusters=number_of_clusters)
+    functions.load('Depression Student Dataset.csv', 1)
+    n_cols = functions.data.shape[1]
+    
+    algorithms.iap(k=2)
+    initial_centers = functions.centers.copy()
+    algorithms.kmeans(k=2, initial_centers=initial_centers)
+    baseline = functions.silhouette_index(display=0)
+    
+    for i in range(n_cols):
+        print(f"Processing column {i}")
+        functions.load('Depression Student Dataset.csv', 1)
+        functions.drop(i)
+        algorithms.iap(k=2)
+        initial_centers = functions.centers.copy()
+        algorithms.kmeans(k=2, initial_centers=initial_centers)
+        new_si = functions.silhouette_index(display=0)
+        impact_dict[i] = new_si - baseline
         
-    cluster_labels = algorithm_instance.fit()
-    base_filename = selected_dataset.split('.')[0]
-    output_filename = f"{base_filename}.predicted"
-    write_cluster_assignments(cluster_labels, output_filename)
-    return cluster_labels
+    sorted_impact_dict = sorted(impact_dict.items(), key=lambda x: x[1])
+    new_order = [x[0] for x in sorted_impact_dict]
+    functions.load('Depression Student Dataset.csv', 1)
+    functions.data = functions.data[functions.data.columns[new_order]]
+    
+    results = []
+    for i in range(len(functions.data.columns)):
+        algorithms.iap(k=2)
+        initial_centers = functions.centers.copy()
+        algorithms.kmeans(k=2, initial_centers=initial_centers)
+        acc = functions.confusion_matrix(0)
+        results.append((i, acc))
+        print(f"Dropping col:{new_order[i]}, Accuracy:{acc}")
+        functions.drop(0)
+        
+    return results
 
-def run_stats(selected_dataset):
-    base_filename = selected_dataset.split('.')[0]
-    data_file = f"{selected_dataset}.data"
-    predicted_file = f"{base_filename}.predicted"
-    actual_file = f"{base_filename}.actual"
-    confusion = TableOfConfusion(actual_file, predicted_file)
-    accuracy = confusion.fit()
-    silhouette = SilhouetteIndex(data_file, predicted_file)
-    silhouette_score = silhouette.fit()
-    print(f"Silhouette: {silhouette_score}")
-    return accuracy, silhouette_score
+def feature_removal_two():
+    functions.load('Depression Student Dataset.csv', 1)
+    results = []
+    
+    while functions.data.shape[1] > 1:
+        baseline = functions.silhouette_index(display=0)
+        best_impact = -float('inf')
+        best_col = None
+        
+        for col in range(functions.data.shape[1]):
+            data_copy = functions.data.copy()
+            functions.drop(col)
+            algorithms.wkmeans(k=2, beta=2)
+            impact = functions.silhouette_index(display=0) - baseline
+            
+            if impact > best_impact:
+                best_impact = impact
+                best_col = col
+            
+            functions.data = data_copy
+        
+        functions.drop(best_col)
+        algorithms.wkmeans(k=2, beta=2)
+        acc = functions.confusion_matrix(display=0)
+        results.append((best_col, acc))
+        print(f"Removed column {best_col}, Accuracy: {acc}")
+    
+    return results
 
-if __name__ == "__main__":
-    try:
-        processed_dataset, number_of_clusters, selected_dataset = pre_processing()
-        cluster_labels = run_algos(processed_dataset, selected_dataset, number_of_clusters)
-        accuracy, silhouette = run_stats(selected_dataset)
-    finally:
-        # Clean up generated files even if an error occurs
-        cleanup_generated_files(selected_dataset)
+def data_order():
+    impact_dict = {}
+    
+    functions.load('Depression Student Dataset.csv', 1)
+    n_cols = functions.data.shape[1]
+    
+    algorithms.iap(k=2)
+    initial_centers = functions.centers.copy()
+    algorithms.kmeans(k=2, initial_centers=initial_centers)
+    baseline = functions.silhouette_index(display=0)
+    
+    for i in range(n_cols):
+        print(f"Processing column {i}")
+        functions.load('Depression Student Dataset.csv', 1)
+        functions.drop(i)
+        algorithms.iap(k=2)
+        initial_centers = functions.centers.copy()
+        algorithms.kmeans(k=2, initial_centers=initial_centers)
+        new_si = functions.silhouette_index(display=0)
+        impact_dict[i] = new_si - baseline
+        
+    sorted_impact_dict = sorted(impact_dict.items(), key=lambda x: x[1], reverse=True)
+    new_order = [x[0] for x in sorted_impact_dict]
+    functions.load('Depression Student Dataset.csv', 1)
+    functions.data = functions.data[functions.data.columns[new_order]]  
+
+    return functions.data
