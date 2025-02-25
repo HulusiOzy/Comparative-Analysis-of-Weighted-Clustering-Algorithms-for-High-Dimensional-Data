@@ -78,14 +78,15 @@ class WKMeans:
         M = len(data_points)
         cluster_sizes = U.sum(axis=0)
         cluster_sizes = np.maximum(cluster_sizes, np.finfo(float).eps)
-        
+
         Z_new = (U.T @ data_points) / cluster_sizes[:, np.newaxis]
         
         empty_clusters = cluster_sizes == 0
         if np.any(empty_clusters):
-            random_indices = np.random.choice(M, np.sum(empty_clusters), replace=False)
-            Z_new[empty_clusters] = data_points[random_indices]
-        
+            print("Test")
+            indices = np.random.choice(M, np.sum(empty_clusters), replace=False)
+            Z_new[empty_clusters] = data_points[indices]
+
         return Z_new
 
     def _P3(self, U, Z, data_points):
@@ -117,7 +118,7 @@ class WKMeans:
         W = W / np.maximum(np.sum(W), np.finfo(float).eps)
         return W
 
-    def _single_run(self):
+    def _single_run(self, depth=0):
         M, N = self.data.shape
         
         if self.initial_centers is not None:
@@ -139,7 +140,9 @@ class WKMeans:
         
         for _ in range(100):
             U = self._P1(self.data, Z, W)
+
             Z = self._P2(self.data, U, Z, W)
+
             W = self._P3(U, Z, self.data)
             
             curr_P0 = self._P0(self.data, U, Z, W)

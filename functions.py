@@ -5,6 +5,7 @@ import os
 from Tools.PreProcessing import Preprocessing
 from Tools.Table_of_Confusion import TableOfConfusion
 from Tools.Silhouette_Index import SilhouetteIndex
+from Tools.CH_Index import CHIndex
 from Tools.ARI import ARI
 from Tools.PCA import PCA
 
@@ -63,32 +64,40 @@ ALGORITHMS = {
             'required': ['k'],
             'optional': ['initial_centers']
         }
+    },   
+    'global_kmeans': {
+        'description': 'Global K-means clustering - deterministic incremental approach',
+        'parameters': {
+            'required': ['k'],
+            'optional': []
+        }
     },
     'iap': {
         'description': 'Iterative Anomalous Pattern',
         'parameters': {
             'required': ['k'],
+            'optional': []
         }
     },
     'wkmeans': {
         'description': 'Weighted K-Means',
         'parameters': {
             'required': ['k', 'beta'],
-            'optional': ['initial_centers']
+            'optional': ['initial_centers', 'initial_weights']
         }
     },
     'swkmeans': {
         'description': 'Subspace Weighted K-Means',
         'parameters': {
             'required': ['k', 'beta'],
-            'optional': ['initial_centers']
+            'optional': ['initial_centers', 'initial_weights']
         }
     },
     'mwkmeans': {
         'description': 'Minkowski Weighted K-Means',
         'parameters': {
             'required': ['k', 'p'],
-            'optional': ['initial_centers']
+            'optional': ['initial_centers', 'initial_weights']
         }
     },
     'upgma': {
@@ -209,12 +218,17 @@ def ari(display = 0, actual = None, predicted = None):
         
     return score
 
-def pca(dimensions=2, display=1, data=None):
+def pca(dimensions=2, display=1, data=None, highlight_actual=False):
     input_data = data if data is not None else globals()['data']
-    
+
     pca_transformer = PCA()
-    transformed_data = pca_transformer.fit_transform(input_data, dimensions=dimensions, display=display)
-    
+    transformed_data = pca_transformer.fit_transform(
+        input_data,
+        dimensions=dimensions,
+        display=display,
+        highlight_actual=highlight_actual,
+    )
+
     return transformed_data
 
 def silhouette_index(display=1, data=None, predicted=None):
@@ -229,22 +243,229 @@ def silhouette_index(display=1, data=None, predicted=None):
     
     return silhouetteIndex  
 
-def init_weights(): #Only for 1/(qi^2)
-    global data
+def ch_index(display=0, data=None, predicted=None):
+    input_data = data if data is not None else globals()['data']
+    predicted_labels = predicted if predicted is not None else globals()['predicted']
     
+    ch_calculator = CHIndex(input_data, predicted_labels)
+    ch_score = float(ch_calculator.fit())
+    
+    if display:
+        ch_calculator.plot()
+    
+    return ch_score
+
+def init_weights():
+    global data
+
     if data is None or len(data) == 0:
         raise ValueError("No data loaded. Use load() function first.")
-        
-    stds = np.std(data, axis=0)
-    stds[stds == 0] = 1e-10 #So no division by zero
-    weights = 1 / (stds * stds)
-    weights = weights / np.sum(weights) #Normaize
-    
+
+    working_data = data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+
+    for col in working_data.columns:
+        if not pd.api.types.is_numeric_dtype(working_data[col]):
+            working_data[col], _ = pd.factorize(working_data[col])
+
+    X = working_data.values
+    n_features = X.shape[1]
+
+    print("\nInitialization methods:")
+    print("1. Random")
+    print("2. Uniform")
+    print("3. Variance-based")
+    print("4. Entropy-based")
+    print("5. Dispersion-based")
+
+    while True:
+        try:
+            choice = int(input("\nSelect method (1-5): "))
+            if choice not in [1, 2, 3, 4, 5]:
+                print("Please enter 1, 2, 3, 4, or 5")
+                continue
+            break
+        except ValueError:
+            print("Please enter a valid number")
+
+    if choice == 1:
+        weights = np.random.rand(n_features)
+    elif choice == 2:
+        weights = np.ones(n_features)
+    elif choice == 3:
+        stds = np.std(X, axis=0)
+        stds[stds == 0] = 1e-10
+        weights = 1 / (stds * stds)
+    elif choice == 4:
+        weights = np.zeros(n_features)
+        n_samples = len(X)
+
+        for i in range(n_features):
+            xi_iqr = np.subtract(*np.percentile(X[:, i], [75, 25]))
+            xi_width = 2 * xi_iqr / np.cbrt(n_samples) if xi_iqr else None
+
+            if xi_width:
+                xi_bins = int(np.ceil((np.max(X[:, i]) - np.min(X[:, i])) / xi_width))
+            else:
+                xi_bins = int(np.ceil(1 + np.log2(n_samples)))
+
+            xi_hist = np.histogram(X[:, i], bins=xi_bins)[0]
+            xi_probs = xi_hist[xi_hist > 0] / n_samples
+            H_Xi = -np.sum(xi_probs * np.log2(xi_probs))
+
+            H_Xi_given_j = np.zeros(n_features)
+            for j in range(n_features):
+                if i != j:
+                    xj_iqr = np.subtract(*np.percentile(X[:, j], [75, 25]))
+                    xj_width = 2 * xj_iqr / np.cbrt(n_samples) if xj_iqr else None
+
+                    if xj_width:
+                        xj_bins = int(np.ceil((np.max(X[:, j]) - np.min(X[:, j])) / xj_width))
+                    else:
+                        xj_bins = int(np.ceil(1 + np.log2(n_samples)))
+
+                    joint_hist = np.histogram2d(X[:, i], X[:, j], bins=[xi_bins, xj_bins])[0]
+                    joint_probs = joint_hist / n_samples
+
+                    xj_probs = np.sum(joint_probs, axis=1)
+                    mask = xj_probs > 0
+                    cond_probs = (joint_probs[mask] / xj_probs[mask, np.newaxis])
+                    cond_probs = cond_probs[cond_probs > 0]
+
+                    H_Xi_given_j[j] = -np.sum(cond_probs * np.log2(cond_probs))
+
+            gain = np.sum(H_Xi_given_j[H_Xi_given_j > 0]) - ((len(H_Xi_given_j) - 1) * H_Xi)
+            weights[i] = abs(gain)
+    else:  
+        print("\nDispersion calculation methods:")
+        print("1. Range Based")
+        print("2. Standard Deviation")
+        print("3. Interquartile Range (IQR)")
+        print("4. Median Absolute Deviation (MAD)")
+
+        while True:
+            try:
+                disp_choice = int(input("\nSelect dispersion method (1-4): "))
+                if disp_choice not in [1, 2, 3, 4]:
+                    print("Please enter 1, 2, 3, or 4")
+                    continue
+                break
+            except ValueError:
+                print("Please enter a valid number")
+
+        dispersions = np.zeros(n_features)
+
+        for i in range(n_features):
+            if disp_choice == 1:  
+                dispersions[i] = np.max(X[:, i]) - np.min(X[:, i])
+            elif disp_choice == 2:  
+                dispersions[i] = np.std(X[:, i])
+            elif disp_choice == 3:  
+                dispersions[i] = np.subtract(*np.percentile(X[:, i], [75, 25]))
+            else:  
+                median = np.median(X[:, i])
+                dispersions[i] = np.median(np.abs(X[:, i] - median))
+
+        dispersions[dispersions == 0] = 1e-10
+        weights = 1 / (dispersions * dispersions)
+
+    weights = weights / np.sum(weights)
+
     try:
         ipython = get_ipython()
         if ipython is not None:
             ipython.user_ns['weights'] = weights
     except NameError:
         pass
-        
+
     return weights
+
+def init_centers(k):
+    global data
+
+    if data is None or len(data) == 0:
+        raise ValueError("No data loaded. Use load() function first.")
+
+    if k <= 0 or k > len(data):
+        raise ValueError(f"Invalid k={k} for {len(data)} data points")
+
+    print("\nInitialization methods:")
+    print("1. Standard (Random points within data bounds)")
+    print("2. Sampling (Random data points)")
+
+    while True:
+        try:
+            choice = int(input("\nSelect method (1 or 2): "))
+            if choice not in [1, 2]:
+                print("Please enter 1 or 2")
+                continue
+            break
+        except ValueError:
+            print("Please enter a valid number")
+
+    if choice == 1:
+        min_vals = np.min(data, axis=0)
+        max_vals = np.max(data, axis=0)
+        centers = np.random.uniform(
+            low=min_vals,
+            high=max_vals,
+            size=(k, data.shape[1])
+        )
+    else:
+        indices = np.random.choice(len(data), size=k, replace=False)
+        centers = data.iloc[indices].to_numpy() if isinstance(data, pd.DataFrame) else data[indices]
+
+    try:
+        ipython = get_ipython()
+        if ipython is not None:
+            ipython.user_ns['centers'] = centers
+    except NameError:
+        pass
+
+    return centers
+
+def init_data(n_samples=100, n_features=2, n_clusters=3, cluster_std=1.0, random_state=None):
+    """
+    https://github.com/scikit-learn/scikit-learn/blob/6a0838c41/sklearn/datasets/_samples_generator.py#L917
+    """
+    global data, actual
+
+    if random_state is not None:
+        np.random.seed(random_state)
+
+    centers = np.random.uniform(-10, 10, size=(n_clusters, n_features))
+
+    samples_per_cluster = n_samples // n_clusters
+    remainder = n_samples % n_clusters
+
+    X = np.zeros((n_samples, n_features))
+    y = np.zeros(n_samples, dtype=int)
+
+    current_idx = 0
+    for i in range(n_clusters):
+        n = samples_per_cluster + (1 if i < remainder else 0)
+        end_idx = current_idx + n
+
+        X[current_idx:end_idx] = np.random.normal(
+            loc=centers[i],
+            scale=cluster_std,
+            size=(n, n_features)
+        )
+        y[current_idx:end_idx] = i
+        current_idx = end_idx
+
+    shuffle_idx = np.random.permutation(n_samples)
+    X = X[shuffle_idx]
+    y = y[shuffle_idx]
+
+    data = pd.DataFrame(X)
+    actual = y
+
+    try:
+        ipython = get_ipython()
+        if ipython is not None:
+            ipython.user_ns['data'] = data
+            ipython.user_ns['actual'] = actual
+    except NameError:
+        pass
+
+    return data
