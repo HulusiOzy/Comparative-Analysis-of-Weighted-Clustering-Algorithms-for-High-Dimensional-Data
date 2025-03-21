@@ -9,6 +9,8 @@ from Tools.CH_Index import CHIndex
 from Tools.ARI import ARI
 from Tools.PCA import PCA
 
+np.set_printoptions(threshold=np.inf) 
+
 data = pd.DataFrame()
 actual = None
 predicted = None
@@ -139,7 +141,7 @@ def list_tools():
         print(f"Description: {info['description']}")
         print(f"Purpose: {info['purpose']}")
 
-def load(filename, preprocess=0):
+def load(filename, preprocess=0, target=1 ,bin=0):
     global data, actual
 
     dataset_path = os.path.join('Datasets', filename)
@@ -147,15 +149,26 @@ def load(filename, preprocess=0):
         raise FileNotFoundError(f"File '{filename}' not found in Datasets folder")
     
     if preprocess:
-        preprocessor = Preprocessing(input_file=dataset_path, target_column=None, column_style='N')
+        preprocessor = Preprocessing(input_file=dataset_path, target_column=None, column_style='N', 
+                                     bin_option=bin, has_target=(target==1))
         processed_path, actual_path = preprocessor.fit()
         data = pd.read_csv(processed_path, header=None)
-        actual = pd.read_csv(actual_path, header=None).iloc[:, 0].values
+        
+        if target and actual_path:
+            actual = pd.read_csv(actual_path, header=None).iloc[:, 0].values
+            os.remove(actual_path)
+        else:
+            actual = None
+            
         os.remove(processed_path)
-        os.remove(actual_path)
     else:
         data = pd.read_csv(dataset_path)
-        actual = None
+        if target:
+            actual = data.iloc[:, -1].values
+            data = data.iloc[:, :-1]
+        else:
+            actual = None
+    
     try:
         ipython = get_ipython()
         if ipython is not None:
