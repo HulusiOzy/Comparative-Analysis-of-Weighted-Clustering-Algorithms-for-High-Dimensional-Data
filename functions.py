@@ -141,7 +141,7 @@ def list_tools():
         print(f"Description: {info['description']}")
         print(f"Purpose: {info['purpose']}")
 
-def load(filename, preprocess=0, target=1 ,bin=0):
+def load(filename, preprocess=0, target=1, bin=0, target_col=-1):
     global data, actual
 
     dataset_path = os.path.join('Datasets', filename)
@@ -149,8 +149,17 @@ def load(filename, preprocess=0, target=1 ,bin=0):
         raise FileNotFoundError(f"File '{filename}' not found in Datasets folder")
     
     if preprocess:
-        preprocessor = Preprocessing(input_file=dataset_path, target_column=None, column_style='N', 
-                                     bin_option=bin, has_target=(target==1))
+        preprocessor_target_col = None
+        if target_col >= 0:
+            preprocessor_target_col = str(target_col)
+        elif target_col < -1:
+            preprocessor_target_col = str(target_col)
+        
+        preprocessor = Preprocessing(input_file=dataset_path, 
+                                     target_column=preprocessor_target_col, 
+                                     column_style='N', 
+                                     bin_option=bin, 
+                                     has_target=(target==1))
         processed_path, actual_path = preprocessor.fit()
         data = pd.read_csv(processed_path, header=None)
         
@@ -164,8 +173,10 @@ def load(filename, preprocess=0, target=1 ,bin=0):
     else:
         data = pd.read_csv(dataset_path)
         if target:
-            actual = data.iloc[:, -1].values
-            data = data.iloc[:, :-1]
+            if target_col < 0:
+                target_col = data.shape[1] + target_col
+            actual = data.iloc[:, target_col].values
+            data = data.drop(data.columns[target_col], axis=1)
         else:
             actual = None
     
