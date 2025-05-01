@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import functions
 
 from functions import (
     list_datasets, list_algorithms, list_tools,
@@ -13,113 +14,75 @@ from algorithms import (
     global_kmeans
 )
 
-import functions
-import algorithms
-
 __all__ = [
     'list_datasets', 'list_algorithms', 'list_tools',
-    'save', 'load', 'save_results', 'drop'
-
-    'confusion_matrix', 'ari', 'pca', 'silhouette_index', 'ch_index'
-
+    'save', 'load', 'drop',
+    'confusion_matrix', 'ari', 'pca', 'silhouette_index', 'ch_index',
     'kmeans', 'wkmeans', 'swkmeans',
     'mwkmeans', 'upgma', 'wards',
-    'iap', 'global_kmeans'
-
-    'data', 'predicted', 'centers', 'weights'
-
-    'actual', 'predicted', 'accuracy', 'ari'
+    'iap', 'global_kmeans',
+    'data', 'predicted', 'centers', 'weights',
+    'actual', 'accuracy'
 ]
 
-ALGORITHMS = {
-    'kmeans': {'function': kmeans, 'params': ['k']},
-    'global_kmeans': {'function': global_kmeans, 'params': ['k']},
-    'wkmeans': {'function': wkmeans, 'params': ['k', 'beta']},
-    'swkmeans': {'function': swkmeans, 'params': ['k', 'beta']},
-    'mwkmeans': {'function': mwkmeans, 'params': ['k', 'p']},
-    'upgma': {'function': upgma, 'params': ['k']},
-    'wards': {'function': wards, 'params': ['k']},
-    'iap': {'function': iap, 'params': ['k']}
-}
-
-def _select_algorithm(prompt="Select algorithm"):
-    print("\nAvailable algorithms:")
-    for i, key in enumerate(ALGORITHMS.keys()):
-        print(f"{i+1}. {key}")
-
-    algo_idx = int(input(f"\n{prompt} (number): ")) - 1
-    algo_key = list(ALGORITHMS.keys())[algo_idx]
-    return algo_key, ALGORITHMS[algo_key]
-
-def _get_params(algo_key, algo_info, k=None):
-    params = {'k': k if k is not None else int(input(f"K for {algo_key}: "))}
-
-    if 'beta' in algo_info['params']:
-        params['beta'] = float(input(f"Beta for {algo_key}: "))
-
-    if 'p' in algo_info['params']:
-        p_input = input(f"P for {algo_key} (inf for infinity): ")
-        params['p'] = float('inf') if p_input.lower() == 'inf' else float(p_input)
-
-    return params
-
-def _calculate_metrics(predicted):
-    metrics = {
-        'silhouette': silhouette_index(display=0, predicted=predicted),
-        'ch_index': ch_index(display=0, predicted=predicted),
-        'accuracy': None,
-        'ari': None
-    }
-
-    if functions.actual is not None:
-        metrics['accuracy'] = confusion_matrix(display=0, predicted=predicted)
-        metrics['ari'] = ari(display=0, predicted=predicted)
-
-    return metrics
-
 def feature_removal():
+    import algorithms
+    
+    algorithms_dict = {
+        'kmeans': algorithms.kmeans,
+        'global_kmeans': algorithms.global_kmeans,
+        'wkmeans': algorithms.wkmeans,
+        'swkmeans': algorithms.swkmeans,
+        'mwkmeans': algorithms.mwkmeans,
+        'upgma': algorithms.upgma,
+        'wards': algorithms.wards,
+        'iap': algorithms.iap
+    }
+    
     filename = input("\nEnter dataset filename: ")
-    algo_key, algo_info = _select_algorithm()
-    params = _get_params(algo_key, algo_info, k=2)
     
-    functions.load(filename, 1)
-    original_data = functions.data.copy()
-    n_cols = original_data.shape[1]
+    print("\nAvailable algorithms:")
+    for i, key in enumerate(algorithms_dict.keys()):
+        print(f"{i+1}. {key}")
     
-    min_cols = max(2, n_cols // 3)
+    algo_idx = int(input("\nSelect algorithm (number): ")) - 1
+    algorithm = list(algorithms_dict.keys())[algo_idx]
+    algo_func = algorithms_dict[algorithm]
     
-    algo_info['function'](**params)
-    baseline = silhouette_index(display=0)
+    params = {'k': 2}
+    if algorithm in ['wkmeans', 'swkmeans']:
+        params['beta'] = float(input("Beta parameter: "))
+    elif algorithm == 'mwkmeans':
+        p_input = input("Minkowski parameter (p), 'inf' for infinity: ")
+        params['p'] = float('inf') if p_input.lower() == 'inf' else float(p_input)
     
     impact_dict = {}
+    functions.load(filename, 1)
+    n_cols = functions.data.shape[1]
+    
+    algo_func(**params)
+    baseline = functions.silhouette_index(display=0)
+    
     for i in range(n_cols):
         print(f"Testing column {i}")
-        functions.data = original_data.drop(original_data.columns[i], axis=1)
-        algo_info['function'](**params)
-        impact_dict[i] = silhouette_index(display=0) - baseline
+        functions.load(filename, 1)
+        functions.drop(i)
+        algo_func(**params)
+        impact_dict[i] = functions.silhouette_index(display=0) - baseline
     
     sorted_impact = sorted(impact_dict.items(), key=lambda x: x[1])
-    column_order = [x[0] for x in sorted_impact]
+    new_order = [x[0] for x in sorted_impact]
     
     functions.load(filename, 1)
+    functions.data = functions.data[functions.data.columns[new_order]]
+    
     results = []
-    
-    max_to_remove = n_cols - min_cols
-    
-    for i in range(min(max_to_remove, len(column_order))):
-        col_to_remove = column_order[i]
-        col_name = original_data.columns[col_to_remove]
-        
-        current_index = list(functions.data.columns).index(col_name)
-        
-        algo_info['function'](**params)
-        acc = confusion_matrix(0)
-        results.append((col_to_remove, acc))
-        print(f"Dropping col:{col_to_remove}, Accuracy:{acc}")
-        
-        functions.drop(current_index)
-    
-    functions.load(filename, 1)
+    for i in range(len(functions.data.columns)):
+        algo_func(**params)
+        acc = functions.confusion_matrix(0)
+        results.append((new_order[i], acc))
+        print(f"Dropping col:{new_order[i]}, Accuracy:{acc}")
+        functions.drop(0)
     
     return results
 
@@ -374,3 +337,7 @@ def help():
     print('\ncompare()')
     print('Compare two clustering algorithms and evaluate their performance using various validity indices.')
     print('--------------------')
+
+    print('\ncompare_all()')
+    print('Compare all the cluster algorithms on a dataseti.')
+    print('-------------------')
